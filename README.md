@@ -32,7 +32,7 @@ Thermal Camera (8×8) → SPI Stream → FPGA Perceptron Core → LED
 ## Demo
 
 <p align="center">
-  <img src="[gif](https://github.com/user-attachments/assets/a59c3073-d6bb-4ba3-aa25-08c048059584)" width="500"/>
+  <img src="assets/gif.gif" width="500"/>
 </p>
 
 <p align="center"><em>Real-Time demo</em></p>

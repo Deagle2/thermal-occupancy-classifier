@@ -19,7 +19,6 @@ Thermal Camera (8×8) → SPI Stream → FPGA Perceptron Core → LED
 - Runtime: fully edge (no cloud / CPU inference)  
 - Verification: synthetic frame streaming  
 
----
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/41e32d41-80a9-4b3a-bc47-ea65c40b2a3c" width="400"/>

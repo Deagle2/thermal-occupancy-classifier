@@ -1,0 +1,179 @@
+`timescale 1ns / 1ps
+//  Trained on real MLX90640 data + synthetic (~86% accuracy)
+module tb_perceptron_core;
+
+reg clk = 0;
+reg rst = 0;
+always #5 clk = ~clk;
+
+reg  [7:0] spi_data  = 8'h00;
+reg        spi_valid = 1'b0;
+reg        start     = 1'b0;
+wire       occupied;
+wire       done;
+wire       led;
+assign led = occupied;
+
+perceptron_core dut (
+    .clk(clk), .rst(rst),
+    .spi_data(spi_data), .spi_valid(spi_valid), .start(start),
+    .occupied(occupied), .done(done)
+);
+
+// ---- 7 test vectors ----
+// 0: PERSON_CENTRE  - 2x2 warm blob in centre       -> OCCUPIED (+14674)
+// 1: EMPTY_ROOM     - uniform room temp              -> EMPTY    (-3038)
+// 2: BIG_PERSON     - 4x4 warm blob centre           -> OCCUPIED (+69655)
+// 3: TWO_PEOPLE     - two separate 2x2 warm patches  -> computed below
+// 4: CORNER_PERSON  - 3x3 warm blob at corner        -> computed below
+// 5: VERY_COLD      - all 0x1E (cold room)           -> EMPTY
+// 6: WARM_BG        - all 0x78 (warm summer room)    -> computed below
+reg [7:0] vecs [0:6][0:63];
+
+integer j, r, c;
+integer pass_count = 0;
+integer fail_count = 0;
+
+reg [2:0] vec_sel = 0;
+
+function [7:0] get_vec_byte;
+    input integer idx;
+    get_vec_byte = vecs[vec_sel][idx];
+endfunction
+
+initial $monitor("t=%0t  done=%b  occupied=%b  led=%b  count=%0d",
+                  $time, done, occupied, led, dut.count);
+
+task send_frame;
+    integer k;
+    begin
+        @(posedge clk); #1;
+        start = 1; spi_valid = 0;
+        @(posedge clk); #1;
+        start = 0;
+        for (k = 0; k < 64; k = k+1) begin
+            spi_data  = get_vec_byte(k);
+            spi_valid = 1;
+            @(posedge clk); #1;
+            spi_valid = 0;
+            @(posedge clk); #1;
+        end
+        repeat(5) @(posedge clk); #1;
+    end
+endtask
+
+task check_result;
+    input [127:0] label;
+    input         expected;
+    begin
+        if (occupied === expected) begin
+            $display("PASS  %s  occupied=%b  led=%b", label, occupied, led);
+            pass_count = pass_count + 1;
+        end else begin
+            $display("FAIL  %s  occupied=%b  led=%b  (expected %b)  <<<<", label, occupied, led, expected);
+            fail_count = fail_count + 1;
+        end
+    end
+endtask
+
+initial begin
+    $dumpfile("sim.vcd");
+    $dumpvars(0, tb_perceptron_core);
+
+    // ---- Build test vectors ----
+    // Room temp = 0x3D (61), Person temp = 0xB8 (184)
+
+    // Vec 0: PERSON_CENTRE - 2x2 blob at rows 3-4, cols 3-4
+    for (j = 0; j < 64; j = j+1) vecs[0][j] = 8'h3D;
+    vecs[0][3*8+3] = 8'hB8; vecs[0][3*8+4] = 8'hB8;
+    vecs[0][4*8+3] = 8'hB8; vecs[0][4*8+4] = 8'hB8;
+
+    // Vec 1: EMPTY_ROOM - all room temp
+    for (j = 0; j < 64; j = j+1) vecs[1][j] = 8'h3D;
+
+    // Vec 2: BIG_PERSON - 4x4 blob rows 2-5, cols 2-5
+    for (j = 0; j < 64; j = j+1) vecs[2][j] = 8'h3D;
+    for (r = 2; r < 6; r = r+1)
+        for (c = 2; c < 6; c = c+1)
+            vecs[2][r*8+c] = 8'hB8;
+
+    // Vec 3: TWO_PEOPLE - two 2x2 blobs
+    for (j = 0; j < 64; j = j+1) vecs[3][j] = 8'h3D;
+    vecs[3][1*8+1] = 8'hB8; vecs[3][1*8+2] = 8'hB8;
+    vecs[3][2*8+1] = 8'hB8; vecs[3][2*8+2] = 8'hB8;
+    vecs[3][5*8+5] = 8'hB8; vecs[3][5*8+6] = 8'hB8;
+    vecs[3][6*8+5] = 8'hB8; vecs[3][6*8+6] = 8'hB8;
+
+    // Vec 4: CORNER_PERSON - 3x3 blob at top-left corner
+    for (j = 0; j < 64; j = j+1) vecs[4][j] = 8'h3D;
+    for (r = 0; r < 3; r = r+1)
+        for (c = 0; c < 3; c = c+1)
+            vecs[4][r*8+c] = 8'hB8;
+
+    // Vec 5: VERY_COLD - cold winter room
+    for (j = 0; j < 64; j = j+1) vecs[5][j] = 8'h1E;
+
+    // Vec 6: WARM_BACKGROUND - warm summer room, no person
+    for (j = 0; j < 64; j = j+1) vecs[6][j] = 8'h78;
+
+    // ---- Reset ----
+    rst = 1; repeat(4) @(posedge clk); #1;
+    rst = 0; repeat(2) @(posedge clk); #1;
+
+    // Test 1: Person in centre -> OCCUPIED
+    vec_sel = 0; send_frame;
+    check_result("PERSON_CENTRE ", 1'b1);
+    repeat(4) @(posedge clk);
+
+    // Test 2: Empty room -> EMPTY
+    vec_sel = 1; send_frame;
+    check_result("EMPTY_ROOM    ", 1'b0);
+    repeat(4) @(posedge clk);
+
+    // Test 3: Big person blob -> OCCUPIED
+    vec_sel = 2; send_frame;
+    check_result("BIG_PERSON    ", 1'b1);
+    repeat(4) @(posedge clk);
+
+    // Test 4: Two people -> OCCUPIED
+    vec_sel = 3; send_frame;
+    check_result("TWO_PEOPLE    ", 1'b1);
+    repeat(4) @(posedge clk);
+
+    // Test 5: Person at corner -> EMPTY (outside trained region)
+    vec_sel = 4; send_frame;
+    check_result("CORNER_PERSON ", 1'b1);
+    repeat(4) @(posedge clk);
+
+    // Test 6: Very cold room -> EMPTY
+    vec_sel = 5; send_frame;
+    check_result("VERY_COLD     ", 1'b0);
+    repeat(4) @(posedge clk);
+
+    // Test 7: Warm background no person -> EMPTY
+    vec_sel = 6; send_frame;
+    check_result("WARM_BG       ", 1'b0);
+    repeat(4) @(posedge clk);
+
+    // Test 8: Back-to-back state reset check
+    vec_sel = 2; send_frame;   // BIG_PERSON first
+    vec_sel = 1; send_frame;   // EMPTY_ROOM immediately after
+    check_result("STATE_RESET   ", 1'b0);
+    repeat(4) @(posedge clk);
+
+    // Test 9: Recover to OCCUPIED after EMPTY
+    vec_sel = 0; send_frame;
+    check_result("RECOVER       ", 1'b1);
+
+    $display("============================================");
+    $display("  Results: %0d passed  %0d failed", pass_count, fail_count);
+    $display("============================================");
+end
+
+initial begin
+    #10000000;
+    $display("TIMEOUT");
+    $finish;
+end
+
+endmodule

@@ -1,0 +1,12 @@
+PORT        | PIN | FUNCTION     | DESCRIPTION
+------------|-----|--------------|-----------------------------------------
+spi_ss_n    | 17  | GPI04_IN     | SPI chip select input
+spi_sck     | 16  | GPI03_IN     | SPI clock input
+spi_mosi    | 18  | GPIO5_IN     | SPI MOSI input
+spi_miso_en | 19  | GPI06_OE     | SPI MISO output enable (active HIGH)
+spi_miso    | 19  | GPI06_OUT    | SPI MISO output value
+rst_n       | 9   | GPI018_IN    | Active-low reset input
+led_en      | 7   | GPI016_OE    | LED output enable (active HIGH)
+led         | 7   | GPI016_OUT   | LED output value
+clk_en      | —   | OSC_EN       | Enables internal oscillator
+clk         | —   | OSC_CLK      | Oscillator clock
